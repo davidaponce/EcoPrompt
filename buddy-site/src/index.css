@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* EcoPrompt Design System - Nature-inspired, clean, gamified */
+
+@layer base {
+  :root {
+    /* Core Background & Text */
+    --background: 120 20% 98%;
+    --foreground: 145 15% 15%;
+
+    /* Cards & Surfaces */
+    --card: 120 30% 97%;
+    --card-foreground: 145 15% 15%;
+
+    /* Interactive Elements */
+    --popover: 120 30% 97%;
+    --popover-foreground: 145 15% 15%;
+
+    /* Primary Brand - Forest Green */
+    --primary: 145 65% 35%;
+    --primary-foreground: 120 20% 98%;
+    --primary-glow: 145 70% 45%;
+
+    /* Secondary - Earth Brown */
+    --secondary: 25 25% 85%;
+    --secondary-foreground: 25 40% 25%;
+
+    /* Muted Elements */
+    --muted: 120 15% 90%;
+    --muted-foreground: 145 10% 45%;
+
+    /* Accent - Mint Green */
+    --accent: 165 55% 75%;
+    --accent-foreground: 145 60% 20%;
+
+    /* Success & Achievement - Bright Green */
+    --success: 130 80% 45%;
+    --success-foreground: 120 20% 98%;
+
+    /* Warning - Warm Orange */
+    --warning: 35 85% 55%;
+    --warning-foreground: 120 20% 98%;
+
+    /* Destructive - Earthy Red */
+    --destructive: 5 70% 50%;
+    --destructive-foreground: 120 20% 98%;
+
+    /* Form Elements */
+    --border: 120 20% 85%;
+    --input: 120 25% 92%;
+    --ring: 145 65% 35%;
+
+    --radius: 0.5rem;
+
+    /* Nature-inspired Gradients */
+    --gradient-forest: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+    --gradient-earth: linear-gradient(180deg, hsl(var(--accent)), hsl(var(--primary)));
+    --gradient-sky: linear-gradient(180deg, hsl(200 70% 65%), hsl(200 80% 70%));
+    --gradient-water: linear-gradient(135deg, hsl(200 80% 55%), hsl(210 85% 65%));
+    --gradient-achievement: linear-gradient(135deg, hsl(var(--success)), hsl(130 70% 60%));
+
+    /* Shadows & Effects */
+    --shadow-soft: 0 4px 20px -4px hsl(145 30% 40% / 0.15);
+    --shadow-glow: 0 0 30px hsl(var(--primary-glow) / 0.3);
+    --shadow-card: 0 2px 10px -2px hsl(145 20% 30% / 0.1);
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Custom Component Styles */
+  .gradient-forest {
+    background: var(--gradient-forest);
+  }
+  
+  .gradient-earth {
+    background: var(--gradient-earth);
+  }
+  
+  .gradient-sky {
+    background: var(--gradient-sky);
+  }
+  
+  .gradient-water {
+    background: var(--gradient-water);
+  }
+  
+  .gradient-achievement {
+    background: var(--gradient-achievement);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  
+  .transition-bounce {
+    transition: var(--transition-bounce);
+  }
+}
