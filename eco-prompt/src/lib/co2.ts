@@ -49,7 +49,11 @@ export const IMPACT_CONFIG = {
 }
 
 export const estimateTotalTokens = (inputTokens: number): number => {
+  // if the box is empty, show zero — don't add a minimum completion
+  if (inputTokens <= 0) return 0
+
   if (!IMPACT_CONFIG.includeOutput) return inputTokens
+
   const estOut = Math.max(
     IMPACT_CONFIG.completionMin,
     Math.round(inputTokens * IMPACT_CONFIG.completionRatio)
