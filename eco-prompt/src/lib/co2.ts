@@ -147,3 +147,57 @@ export const fmtInt = (n: number): string => Math.round(n).toLocaleString()
 
 // Optional: always show kWh (no Wh/mWh)
 export const fmtKWhStrict = (kwh: number, d = 6): string => `${kwh.toFixed(d)} kWh`
+
+// ---------- Extra equivalents used by the "saved" toast ----------
+// Rough, order-of-magnitude factors (you can tune later if you want)
+const WATER_L_PER_KWH = 1.0          // ~1 liter of water per kWh (datacenter WUE varies 0.2–2+)
+const TREE_G_CO2_PER_DAY = 60        // ~60 g CO₂ sequestered per tree per day (~22 kg/year)
+
+export const fmtLiters = (liters: number): string => {
+  if (liters >= 1) return `${liters.toFixed(liters < 10 ? 1 : 0)} L`
+  const ml = liters * 1000
+  return `${ml.toFixed(ml < 10 ? 1 : 0)} mL`
+}
+
+export const fmtTreeDays = (days: number): string => {
+  if (days < 1) return "<1 tree-day"
+  if (days >= 365) return `${(days / 365).toFixed(days / 365 < 10 ? 1 : 0)} tree-years`
+  return `${Math.round(days).toLocaleString()} tree-days`
+}
+
+export type Savings = {
+  tokensSaved: number
+  kwhSaved: number
+  gSaved: number
+  eq: {
+    googleSearches: number
+    phoneCharges: number
+    waterLiters: number
+    treeDays: number
+  }
+}
+
+/**
+ * Compare the full exchange impact (input + estimated output) before vs after.
+ * Uses the same tokensToImpact() model so everything stays consistent.
+ */
+export const compareImpact = (beforeTokens: number, afterTokens: number): Savings => {
+  const before = tokensToImpact(beforeTokens)
+  const after  = tokensToImpact(afterTokens)
+
+  const tokensSaved = Math.max(0, before.tokens - after.tokens)
+  const kwhSaved    = Math.max(0, before.kwh - after.kwh)
+  const gSaved      = Math.max(0, before.gCO2 - after.gCO2)
+
+  return {
+    tokensSaved,
+    kwhSaved,
+    gSaved,
+    eq: {
+      googleSearches: Math.max(0, before.eq.googleSearches - after.eq.googleSearches),
+      phoneCharges:   Math.max(0, before.eq.phoneCharges   - after.eq.phoneCharges),
+      waterLiters:    Math.max(0, kwhSaved * WATER_L_PER_KWH),
+      treeDays:       Math.max(0, gSaved / TREE_G_CO2_PER_DAY)
+    }
+  }
+}
