@@ -1,6 +1,7 @@
-// contents/chatgpt.ts
+// src/contents/chatgpt.ts
 import type { PlasmoCSConfig } from "plasmo"
 import { encode } from "gpt-tokenizer"
+import { tokensToImpact, fmtInt, fmtKWh, fmtG } from "../lib/co2"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://chat.openai.com/*", "https://chatgpt.com/*"],
@@ -19,7 +20,7 @@ const ensureStyle = () => {
   const style = document.createElement("style")
   style.id = "eco-style-chatgpt"
   style.textContent = `
-    #eco-topright{position:fixed;top:12px;right:12px;z-index:2147483647;width:350px;background:#fff;border:1px solid #dadce0;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:8px 10px;font:13px/1.45 Arial,sans-serif}
+    #eco-topright{position:fixed;top:12px;right:12px;z-index:2147483647;width:350px;background:#fff;border:1px solid #dadce0;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:10px 12px;font:13px/1.45 Arial,sans-serif; color:#111}
     #eco-topright .eco-status{font-size:12px;color:#5f6368;padding:6px 0}
     #eco-topright .eco-list{margin:0;padding:0;list-style:none}
     #eco-topright .eco-item{margin:0;padding:8px 0;border-top:1px solid #eee}
@@ -28,12 +29,15 @@ const ensureStyle = () => {
     #eco-topright .eco-link:hover .eco-title{text-decoration:underline}
     #eco-topright .eco-title{font-size:13px;font-weight:600;color:#1a0dab;overflow-wrap:anywhere}
     #eco-topright .eco-url{font-size:12px;color:#006621}
+    #eco-topright .eco-footprint h3{margin:0 0 6px;font-size:14px;font-weight:600}
+    #eco-topright .eco-row{margin:4px 0}
+    #eco-topright .eco-small{font-size:12px;opacity:.8}
   `
-  document.head.appendChild(style)
+  ;(document.head || document.documentElement).appendChild(style)
 }
 const ensurePopup = () => {
   let el = document.getElementById("eco-topright") as HTMLDivElement | null
-  if (!el) { el = document.createElement("div"); el.id = "eco-topright"; document.body.appendChild(el) }
+  if (!el) { el = document.createElement("div"); el.id = "eco-topright"; (document.body || document.documentElement).appendChild(el) }
   return el
 }
 const showStatus = (msg: string) => {
@@ -89,12 +93,11 @@ const searchGoogle = (q: string): Promise<LinkItem[] | { error: string }> =>
 
 // ---------------- Prompt capture (works through shadow DOM) ----------------
 let currentPrompt = "" // updated by event listeners
+let lastTokens = -1     // for cheap change detection
 
 const extractTextFromNode = (el: Element | Document | null): string => {
   if (!el) return ""
-  // textarea
   if (el instanceof HTMLTextAreaElement) return el.value || ""
-  // contenteditable / role=textbox
   if (el instanceof HTMLElement) {
     const ce = el.getAttribute("contenteditable") === "true" || el.getAttribute("role") === "textbox"
     if (ce) {
@@ -105,7 +108,6 @@ const extractTextFromNode = (el: Element | Document | null): string => {
   }
   return ""
 }
-
 const targetFromEventPath = (ev: Event): HTMLElement | null => {
   const path = (ev.composedPath && ev.composedPath()) || []
   for (const t of path) {
@@ -118,7 +120,6 @@ const targetFromEventPath = (ev: Event): HTMLElement | null => {
   }
   return null
 }
-
 const readDeepActive = (): string => {
   const getDeep = (root: Document | ShadowRoot): Element | null => {
     // @ts-ignore
@@ -128,6 +129,11 @@ const readDeepActive = (): string => {
   }
   const el = getDeep(document) as Element | null
   return extractTextFromNode(el)
+}
+
+const safeTokenize = (text: string): number => {
+  try { return text ? encode(text).length : 0 }
+  catch { return Math.ceil((text || "").length / 4) }
 }
 
 // ---------------- Render ----------------
@@ -146,41 +152,65 @@ const render = async () => {
   const q0 = currentPrompt || readDeepActive()
   const q = (q0 || "").replace(/\s+/g, " ").trim()
 
-  if (!q) { showStatus("Type your prompt to see top Google results…"); lastQuery=""; lastLinks=[]; return }
+  // ---- NEW: live tokens + CO₂ panel ----
+  const tokens = safeTokenize(q)
+  if (tokens !== lastTokens) {
+    lastTokens = tokens
+    chrome.storage.local.set({ currentTokens: tokens, currentSource: "chatgpt" })
+  }
+  const impact = tokensToImpact(tokens)
 
-  if (q !== lastQuery) {
+  // ---- Google results (existing behavior) ----
+  if (q && q !== lastQuery) {
     lastQuery = q
     showStatus("Searching Google…")
     const resp = await searchGoogle(q)
     if (Array.isArray(resp)) lastLinks = resp
-    else { lastLinks=[]; showStatus(`Could not fetch Google: ${resp.error}`); return }
+    else { lastLinks=[]; showStatus(`Could not fetch Google: ${resp.error}`) }
   }
 
-  if (!lastLinks.length) { showStatus("No results found."); return }
-
   const el = ensurePopup()
+  const linksHTML = lastLinks.length
+    ? `
+      <ul class="eco-list">
+        ${lastLinks.slice(0,3).map((l,i)=>`
+          <li class="eco-item">
+            <a class="eco-link" data-eco-index="${i}" href="${escapeAttr(l.href)}" target="_blank" rel="noopener">
+              <div class="eco-title">${escapeHtml(l.title || l.href)}</div>
+              <div class="eco-url">${escapeHtml(simplifyURL(l.href))}</div>
+            </a>
+          </li>`).join("")}
+      </ul>`
+    : (q ? `<div class="eco-status">No results found.</div>` : ``)
+
+  // ---- Compose card: CO₂ first, then links ----
   el.innerHTML = `
-    <ul class="eco-list">
-      ${lastLinks.slice(0,3).map((l,i)=>`
-        <li class="eco-item">
-          <a class="eco-link" data-eco-index="${i}" href="${escapeAttr(l.href)}" target="_blank" rel="noopener">
-            <div class="eco-title">${escapeHtml(l.title || l.href)}</div>
-            <div class="eco-url">${escapeHtml(simplifyURL(l.href))}</div>
-          </a>
-        </li>`).join("")}
-    </ul>`
-  el.querySelectorAll<HTMLAnchorElement>("a[data-eco-index]").forEach(a => { a.onclick = () => incrementClickStats(q) })
+    <div class="eco-footprint">
+      <h3>AI Footprint</h3>
+      <div class="eco-row">Tokens: ${fmtInt(tokens)}</div>
+      <div class="eco-row">Energy: ${fmtKWh(impact.kwh)}</div>
+      <div class="eco-row">Emissions: ${fmtG(impact.gCO2)}</div>
+      <div class="eco-row eco-small">
+        ≈ ${fmtInt(impact.eq.phoneCharges)} phone charges ·
+        ≈ ${fmtInt(impact.eq.bulbHours60W)} h (60W) ·
+        ≈ ${fmtInt(impact.eq.googleSearches)} searches
+      </div>
+    </div>
+    ${linksHTML}
+  `
+
+  // click tracking stays the same
+  el.querySelectorAll<HTMLAnchorElement>("a[data-eco-index]").forEach(a => {
+    a.onclick = () => incrementClickStats(q)
+  })
 }
 
 const debouncedRender = debounce(render, 200)
 
 const main = () => {
-  console.log("[EcoPrompt CS] loaded")
-
-  // 1) Start loop immediately
   render()
 
-  // 2) Listen anywhere (capture) and keep a copy of the latest editor text
+  // Listen anywhere & update currentPrompt
   const updateFromEvent = (ev: Event) => {
     const el = targetFromEventPath(ev) || (document.activeElement as HTMLElement | null)
     const txt = extractTextFromNode(el || null)
@@ -192,11 +222,11 @@ const main = () => {
   document.addEventListener("paste", updateFromEvent, true)
   document.addEventListener("compositionend", updateFromEvent, true)
 
-  // 3) Watch SPA/DOM changes
+  // Watch SPA/DOM changes
   const mo = new MutationObserver(debouncedRender)
   mo.observe(document.documentElement, { childList:true, subtree:true })
 
-  // 4) Safety poll
+  // Safety poll
   setInterval(debouncedRender, 1200)
 }
 
