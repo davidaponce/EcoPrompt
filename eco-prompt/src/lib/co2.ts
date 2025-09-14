@@ -73,6 +73,16 @@ export const tokensToImpact = (tokens: number): Impact => {
 }
 
 // ---------------- Optional: formatting helpers ----------------
-export const fmtKWh = (kwh: number, d = 2): string => `${kwh.toFixed(d)} kWh`
-export const fmtG = (g: number, d = 0): string => `${g.toFixed(d)} g CO₂`
+export const fmtKWh = (kwh: number): string => {
+  if (kwh >= 1) return `${kwh.toFixed(2)} kWh`
+  if (kwh >= 0.001) return `${(kwh * 1000).toFixed(2)} Wh`   // < 1 kWh → Wh
+  return `${(kwh * 1_000_000).toFixed(0)} mWh`               // tiny → mWh
+}
+
+export const fmtG = (g: number): string => {
+  if (g >= 1) return `${g.toFixed(2)} g CO₂`
+  if (g >= 0.001) return `${(g * 1000).toFixed(2)} mg CO₂`   // < 1 g → mg
+  return `${(g * 1_000_000).toFixed(0)} µg CO₂`              // ultra-small → µg
+}
+
 export const fmtInt = (n: number): string => Math.round(n).toLocaleString()

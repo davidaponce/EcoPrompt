@@ -186,7 +186,7 @@ const render = async () => {
   // ---- Compose card: CO₂ first, then links ----
   el.innerHTML = `
     <div class="eco-footprint">
-      <h3>AI Footprint</h3>
+      <h3>EcoPrompt🌱</h3>
       <div class="eco-row">Tokens: ${fmtInt(tokens)}</div>
       <div class="eco-row">Energy: ${fmtKWh(impact.kwh)}</div>
       <div class="eco-row">Emissions: ${fmtG(impact.gCO2)}</div>
