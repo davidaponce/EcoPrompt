@@ -71,3 +71,8 @@ export const tokensToImpact = (tokens: number): Impact => {
     }
   }
 }
+
+// ---------------- Optional: formatting helpers ----------------
+export const fmtKWh = (kwh: number, d = 2): string => `${kwh.toFixed(d)} kWh`
+export const fmtG = (g: number, d = 0): string => `${g.toFixed(d)} g CO₂`
+export const fmtInt = (n: number): string => Math.round(n).toLocaleString()
