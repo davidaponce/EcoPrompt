@@ -1,0 +1,38 @@
+# Common adverbs / hedge / filler
+actually
+basically
+literally
+honestly
+seriously
+just
+really
+very
+quite
+pretty
+perhaps
+maybe
+probably
+possibly
+somewhat
+definitely
+obviously
+clearly
+basically
+essentially
+
+# Vagueness
+kind of
+sort of
+a bit
+a little
+
+# Hedging clauses
+i think
+i believe
+i guess
+i feel
+i mean
+you know
+
+# Conversational tic
+like
