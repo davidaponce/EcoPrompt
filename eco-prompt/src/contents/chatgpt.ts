@@ -2,14 +2,101 @@
 import type { PlasmoCSConfig } from "plasmo"
 import { encode } from "gpt-tokenizer"
 import {
-  // live footprint
-  tokensToImpact, fmtInt, fmtKWh, fmtG, fmtEq, fmtPhoneCharge, fmtBulbTime, setProfile,
-  // savings (no water/trees)
-  compareImpact
+  tokensToImpact,
+  fmtInt, fmtKWh, fmtG, fmtEq,
+  fmtPhoneCharge, fmtBulbTime,
+  setProfile
 } from "../lib/co2"
 
 // Optional filler list (one per line; lines starting with # are comments)
 import FILLERS_RAW from "bundle-text:../data/fillers.txt"
+
+// ---------------------------------------------------------
+// Supabase REST config (using anon key for now)
+// ---------------------------------------------------------
+const SUPABASE_URL = "https://xzuzepthtnckpspdlaap.supabase.co"
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6dXplcHRodG5ja3BzcGRsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4MDI3MjgsImV4cCI6MjA3MzM3ODcyOH0.TKTnYGi8SxzpgHsYShha4LHwvTxEVF6Y3Wbit4gIA1w"
+
+// TEMP user identifier you’ll replace later
+const TEMP_USER_ID = "ffd21808-54a7-4c3b-becb-6436341ed95f"
+
+// Which column to match your profile row by.
+// If your rows are keyed by primary `id`, set to "id".
+const PROFILE_KEY: "user_id" | "id" = "user_id"
+
+/**
+ * Preferred atomic increment via RPC:
+ *
+ * -- Run this once in your DB (SQL editor) to create the RPC:
+ * create or replace function public.increment_tokens_saved(p_user_id uuid, p_delta bigint)
+ * returns void
+ * language sql
+ * security definer
+ * as $$
+ *   update profiles
+ *   set total_tokens_saved = coalesce(total_tokens_saved,0) + p_delta
+ *   where user_id = p_user_id;
+ * $$;
+ *
+ * grant execute on function public.increment_tokens_saved(uuid, bigint) to anon;
+ */
+const tryRpcIncrement = async (delta: number) => {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_tokens_saved`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_user_id: TEMP_USER_ID, p_delta: Math.round(delta) })
+  })
+  return resp.ok
+}
+
+// Fallback: read current total_tokens_saved then patch with (current + delta)
+// Not atomic, but fine for a temporary single-user setup.
+const fallbackIncrement = async (delta: number) => {
+  const q = encodeURIComponent(TEMP_USER_ID)
+  const r1 = await fetch(
+    `${SUPABASE_URL}/rest/v1/profiles?${PROFILE_KEY}=eq.${q}&select=total_tokens_saved`,
+    {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    }
+  )
+  if (!r1.ok) return
+  const rows = await r1.json()
+  const current = Number(rows?.[0]?.total_tokens_saved ?? 0)
+  const next = current + Math.round(delta)
+
+  await fetch(`${SUPABASE_URL}/rest/v1/profiles?${PROFILE_KEY}=eq.${q}`, {
+    method: "PATCH",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal"
+    },
+    body: JSON.stringify({ total_tokens_saved: next })
+  })
+}
+
+// Public function the content script calls on send
+const addSavedTokensToProfile = async (delta: number) => {
+  if (delta <= 0) return
+  try {
+    // try RPC first; if missing or blocked by RLS, fall back
+    const ok = await tryRpcIncrement(delta)
+    if (!ok) await fallbackIncrement(delta)
+  } catch {
+    // swallow in content script
+  }
+}
+
+// ---------------------------------------------------------
 
 // Run on ChatGPT (old + new domains)
 export const config: PlasmoCSConfig = {
@@ -23,19 +110,18 @@ setProfile("extreme") // or "typical" / "conservative"
 
 // ---------- styles & panel ----------
 const ensureStyle = () => {
-  if (document.getElementById("eco-style-chatgpt")) return;
+  if (document.getElementById("eco-style-chatgpt")) return
   const style = document.createElement("style")
   style.id = "eco-style-chatgpt"
   style.textContent = `
     #eco-topright{
       position:fixed;top:12px;right:12px;z-index:2147483647;
-      width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;
+      width:320px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;
       box-shadow:0 8px 28px rgba(0,0,0,.15);padding:12px 14px;
       color:#111827;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
     }
     @media (prefers-color-scheme: dark){
       #eco-topright{background:#16181c;color:#e5e7eb;border-color:#2a2f39}
-      #eco-saved{background:#0d3b1e;color:#d2f5df;border-color:#14532d}
     }
     #eco-topright h3{margin:0 0 6px;font-size:14px;font-weight:600}
     #eco-topright .row{margin:4px 0}
@@ -83,7 +169,6 @@ const FILLERS = parseFillers(FILLERS_RAW || "")
 function stripFillers(s: string) {
   if (!s) return s
   let t = ` ${s} `
-  // replace longer phrases first
   for (const p of [...FILLERS].sort((a, b) => b.length - a.length)) {
     t = t.replace(new RegExp(`\\b${esc(p)}\\b`, "gi"), " ")
   }
@@ -113,7 +198,6 @@ const isVisible = (el: Element) => {
   return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"
 }
 
-// scan DOM for the best candidate (bottom-most, visible)
 function findBestEditor(): EditorEl | null {
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>(
@@ -131,7 +215,6 @@ function findBestEditor(): EditorEl | null {
   return best as EditorEl | null
 }
 
-// Use cached editor if still in the document; else scan
 function getEditor(): EditorEl | null {
   if (lastEditor && document.contains(lastEditor)) return lastEditor
   lastEditor = findBestEditor()
@@ -149,7 +232,6 @@ function setEditorText(text: string) {
   const el = getEditor()
   if (!el) return
 
-  // Case 1: <textarea>/<input>
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     const proto = Object.getPrototypeOf(el)
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
@@ -158,19 +240,15 @@ function setEditorText(text: string) {
     return
   }
 
-  // Case 2: contenteditable (Lexical/React)
   el.focus()
-  // Select-all inside the editor so we can replace safely even if focus moved to the button
   const sel = document.getSelection()
   sel?.removeAllRanges()
   const range = document.createRange()
   range.selectNodeContents(el)
   sel?.addRange(range)
 
-  // Preferred path: insertText (fires beforeinput+input that editors listen to)
   document.execCommand("insertText", false, text)
 
-  // Extra nudge for some builds
   el.dispatchEvent(new InputEvent("input", {
     bubbles: true,
     inputType: "insertReplacementText",
@@ -178,7 +256,7 @@ function setEditorText(text: string) {
   }))
 }
 
-// ---------- capture user typing (keeps cache fresh) ----------
+// ---------- capture user typing ----------
 let currentPrompt = ""
 
 const targetFromEventPath = (ev: Event): HTMLElement | null => {
@@ -205,12 +283,12 @@ const debounce = <F extends (...a: any[]) => void>(fn: F, ms = 120) => {
     t = window.setTimeout(() => fn(...args), ms)
   }
 }
+
 const safeTokenize = (text: string): number => {
   try { return text ? encode(text).length : 0 }
   catch { return Math.ceil((text || "").length / 4) }
 }
 
-// Guarded chrome.storage write (avoid dev “context invalidated” crashes)
 const canUseChrome = () =>
   typeof chrome !== "undefined" &&
   !!chrome.runtime &&
@@ -231,7 +309,6 @@ const showSavedToast = (html: string) => {
     panel.appendChild(toast)
   }
   toast.innerHTML = html
-  // auto-hide after 5s (tweak/remove if you want it to persist)
   window.setTimeout(() => { toast?.remove() }, 5000)
 }
 
@@ -250,9 +327,7 @@ const recordCumulative = async (tokensSaved: number, gSaved: number) => {
   } catch { /* ignore */ }
 }
 
-// ---------- trim workflow ----------
-// We remember the token count *before* the last Trim click.
-// On send, we compare that snapshot to the current editor text.
+// Snapshot tokens *before* the last Trim click; send uses this vs current editor
 let pendingTrimBeforeTokens: number | null = null
 
 // ---------- render ----------
@@ -260,14 +335,12 @@ const render = () => {
   ensureStyle()
   const panel = ensurePanel()
 
-  // Prefer event-fed prompt; fallback to editor text
   const raw = (currentPrompt || getEditorText() || "").replace(/\s+/g, " ").trim()
   const tokens = safeTokenize(raw)
   const impact = tokensToImpact(tokens)
 
   safeStore({ currentTokens: tokens, currentSource: "chatgpt" })
 
-  // keep any existing toast in place while re-rendering panel
   const existingToast = document.getElementById("eco-saved")
   const toastHTML = existingToast ? existingToast.outerHTML : ""
 
@@ -293,30 +366,19 @@ const render = () => {
       const beforeText = getEditorText()
       const afterText  = stripFillers(beforeText)
       if (afterText !== beforeText) {
-        // snapshot tokens *before* trimming, for later logging
         pendingTrimBeforeTokens = safeTokenize(beforeText)
         setEditorText(afterText)
         currentPrompt = afterText
       } else {
-        // nothing changed -> no pending savings to report
         pendingTrimBeforeTokens = null
       }
     }
   }
 }
 
-// keep “stopped typing” snapshot for savings math
-let baselineText = ""
-let baselineTokens = 0
-const markStoppedTyping = debounce(() => {
-  const active = readDeepActive()
-  baselineText = getTextFromNode(active)
-  baselineTokens = safeTokenize((baselineText || "").replace(/\s+/g, " ").trim())
-}, 600)
-
 const debouncedRender = debounce(render, 150)
 
-// ---------- send handlers (log only when user sends) ----------
+// ---------- send handlers ----------
 const isSendButton = (n: Element | null): boolean => {
   if (!n) return false
   const el = n as HTMLElement
@@ -328,13 +390,11 @@ const isSendButton = (n: Element | null): boolean => {
 }
 
 const onSend = () => {
-  // Only log if a Trim happened before this send
   if (pendingTrimBeforeTokens == null) return
 
   const currentText   = (getEditorText() || "").trim()
   const currentTokens = safeTokenize(currentText)
 
-  // Compute savings using the full impact model so equivalences stay consistent
   const b = tokensToImpact(pendingTrimBeforeTokens)
   const a = tokensToImpact(currentTokens)
 
@@ -344,20 +404,18 @@ const onSend = () => {
   const searchesSaved     = Math.max(0, b.eq.googleSearches - a.eq.googleSearches)
   const phoneChargesSaved = Math.max(0, b.eq.phoneCharges - a.eq.phoneCharges)
 
-  // Show green toast
   showSavedToast(
     `Saved <b>${fmtInt(tokensSaved)}</b> tokens, <b>${fmtKWh(kwhSaved)}</b>, <b>${fmtG(gSaved)}</b><br/>
      ≈ ${fmtEq(searchesSaved)} searches ·
      ≈ ${fmtPhoneCharge(phoneChargesSaved)} of a phone charge`
   )
 
-  // Record cumulative once per send
   recordCumulative(tokensSaved, gSaved)
 
-  // Clear snapshot to avoid double-logging on subsequent sends
-  pendingTrimBeforeTokens = null
+  // ✅ increment the user's running total in `profiles`
+  addSavedTokensToProfile(tokensSaved)
 
-  // Nudge panel numbers
+  pendingTrimBeforeTokens = null
   debouncedRender()
 }
 
@@ -376,7 +434,6 @@ document.addEventListener("keydown", (ev) => {
 const main = () => {
   render()
 
-  // Keep cache fresh and panel updated
   const updateFromEvent = (ev: Event) => {
     const el = targetFromEventPath(ev) || (document.activeElement as Element | null)
     if (isEditorEl(el)) lastEditor = el as EditorEl
@@ -388,13 +445,11 @@ const main = () => {
   document.addEventListener("paste", updateFromEvent, true)
   document.addEventListener("compositionend", updateFromEvent, true)
 
-  // React to SPA mutations or view changes
   const mo = new MutationObserver(debouncedRender)
   mo.observe(document.documentElement, { childList: true, subtree: true })
   window.addEventListener("resize", debouncedRender)
   window.addEventListener("scroll", debouncedRender, true)
 
-  // Safety poll
   setInterval(debouncedRender, 1200)
 }
 
