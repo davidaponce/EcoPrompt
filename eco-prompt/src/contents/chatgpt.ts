@@ -8,39 +8,15 @@ import {
   setProfile
 } from "../lib/co2"
 
-// Optional filler list (one per line; lines starting with # are comments)
 import FILLERS_RAW from "bundle-text:../data/fillers.txt"
 
-// ---------------------------------------------------------
-// Supabase REST config (using anon key for now)
-// ---------------------------------------------------------
+// ---------- Supabase REST config ----------
 const SUPABASE_URL = "https://xzuzepthtnckpspdlaap.supabase.co"
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6dXplcHRodG5ja3BzcGRsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4MDI3MjgsImV4cCI6MjA3MzM3ODcyOH0.TKTnYGi8SxzpgHsYShha4LHwvTxEVF6Y3Wbit4gIA1w"
-
-// TEMP user identifier you’ll replace later
 const TEMP_USER_ID = "ffd21808-54a7-4c3b-becb-6436341ed95f"
-
-// Which column to match your profile row by.
-// If your rows are keyed by primary `id`, set to "id".
 const PROFILE_KEY: "user_id" | "id" = "user_id"
 
-/**
- * Preferred atomic increment via RPC:
- *
- * -- Run this once in your DB (SQL editor) to create the RPC:
- * create or replace function public.increment_tokens_saved(p_user_id uuid, p_delta bigint)
- * returns void
- * language sql
- * security definer
- * as $$
- *   update profiles
- *   set total_tokens_saved = coalesce(total_tokens_saved,0) + p_delta
- *   where user_id = p_user_id;
- * $$;
- *
- * grant execute on function public.increment_tokens_saved(uuid, bigint) to anon;
- */
 const tryRpcIncrement = async (delta: number) => {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_tokens_saved`, {
     method: "POST",
@@ -54,18 +30,11 @@ const tryRpcIncrement = async (delta: number) => {
   return resp.ok
 }
 
-// Fallback: read current total_tokens_saved then patch with (current + delta)
-// Not atomic, but fine for a temporary single-user setup.
 const fallbackIncrement = async (delta: number) => {
   const q = encodeURIComponent(TEMP_USER_ID)
   const r1 = await fetch(
     `${SUPABASE_URL}/rest/v1/profiles?${PROFILE_KEY}=eq.${q}&select=total_tokens_saved`,
-    {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-      }
-    }
+    { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
   )
   if (!r1.ok) return
   const rows = await r1.json()
@@ -84,29 +53,22 @@ const fallbackIncrement = async (delta: number) => {
   })
 }
 
-// Public function the content script calls on send
 const addSavedTokensToProfile = async (delta: number) => {
   if (delta <= 0) return
   try {
-    // try RPC first; if missing or blocked by RLS, fall back
     const ok = await tryRpcIncrement(delta)
     if (!ok) await fallbackIncrement(delta)
-  } catch {
-    // swallow in content script
-  }
+  } catch {}
 }
 
-// ---------------------------------------------------------
-
-// Run on ChatGPT (old + new domains)
+// ---------- Content script config ----------
 export const config: PlasmoCSConfig = {
   matches: ["*://chat.openai.com/*", "*://chatgpt.com/*"],
   all_frames: false,
   run_at: "document_start"
 }
 
-// Choose impact profile
-setProfile("extreme") // or "typical" / "conservative"
+setProfile("extreme")
 
 // ---------- styles & panel ----------
 const ensureStyle = () => {
@@ -120,6 +82,7 @@ const ensureStyle = () => {
       box-shadow:0 8px 28px rgba(0,0,0,.15);padding:12px 14px;
       color:#111827;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
     }
+    #eco-topright .url{display:block; max-width:100%; word-break:break-all; overflow-wrap:anywhere}
     @media (prefers-color-scheme: dark){
       #eco-topright{background:#16181c;color:#e5e7eb;border-color:#2a2f39}
     }
@@ -145,6 +108,14 @@ const ensureStyle = () => {
     @media (prefers-color-scheme: dark){
       #eco-saved{background:#0d3b1e;color:#d2f5df;border-color:#14532d}
     }
+
+    /* Google section at bottom */
+    #eco-topright .google{margin-top:10px;border-top:1px dashed #e5e7eb;padding-top:8px}
+    @media (prefers-color-scheme: dark){
+      #eco-topright .google{border-color:#2a2f39}
+    }
+    #eco-topright .link{text-decoration:none}
+    #eco-topright .link:hover{text-decoration:underline}
   `
   document.head.appendChild(style)
 }
@@ -158,6 +129,34 @@ const ensurePanel = (): HTMLDivElement => {
   }
   return el
 }
+
+// ---------- “first Google link” helpers ----------
+const luckyUrl = (q: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent(q)}&btnI=1&hl=en&safe=active`
+
+let lastLuckyQuery = ""
+let resolvedLuckyUrl: string | null = null
+let resolvedLuckyTitle: string | null = null;
+
+const resolveLuckyInBg = (q: string) => {
+  const url = luckyUrl(q)
+  try {
+    chrome.runtime?.sendMessage(
+      { type: "resolve-lucky", url },
+      (resp?: { ok?: boolean; url?: string; title?: string }) => {
+        if (resp?.ok && resp.url) {
+          resolvedLuckyUrl = resp.url
+          resolvedLuckyTitle = resp.title ?? null
+        } else {
+          resolvedLuckyUrl = null
+          resolvedLuckyTitle = null
+        }
+        debouncedRender()
+      }
+    )
+  } catch { /* ignore */ }
+}
+
 
 // ---------- filler helpers ----------
 const parseFillers = (raw: string) =>
@@ -175,7 +174,7 @@ function stripFillers(s: string) {
   return t.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim()
 }
 
-// ---------- editor detection (cache + scan) ----------
+// ---------- editor detection ----------
 type EditorEl = HTMLTextAreaElement | HTMLInputElement | HTMLElement
 let lastEditor: EditorEl | null = null
 
@@ -246,9 +245,7 @@ function setEditorText(text: string) {
   const range = document.createRange()
   range.selectNodeContents(el)
   sel?.addRange(range)
-
   document.execCommand("insertText", false, text)
-
   el.dispatchEvent(new InputEvent("input", {
     bubbles: true,
     inputType: "insertReplacementText",
@@ -296,7 +293,7 @@ const canUseChrome = () =>
   !!chrome.storage?.local
 
 const safeStore = (data: Record<string, unknown>) => {
-  try { if (canUseChrome()) chrome.storage.local.set(data) } catch { /* noop */ }
+  try { if (canUseChrome()) chrome.storage.local.set(data) } catch {}
 }
 
 // ---------- green saved box ----------
@@ -312,7 +309,7 @@ const showSavedToast = (html: string) => {
   window.setTimeout(() => { toast?.remove() }, 5000)
 }
 
-// ---------- cumulative stats (logged only on send) ----------
+// ---------- cumulative stats ----------
 const recordCumulative = async (tokensSaved: number, gSaved: number) => {
   try {
     if (!canUseChrome()) return
@@ -324,7 +321,7 @@ const recordCumulative = async (tokensSaved: number, gSaved: number) => {
     v.co2_saved_g = (v.co2_saved_g || 0) + gSaved
     v.queries_rewritten = (v.queries_rewritten || 0) + 1
     await chrome.storage.local.set({ ecoStats: v })
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 // Snapshot tokens *before* the last Trim click; send uses this vs current editor
@@ -336,6 +333,13 @@ const render = () => {
   const panel = ensurePanel()
 
   const raw = (currentPrompt || getEditorText() || "").replace(/\s+/g, " ").trim()
+
+  // kick off resolution whenever the query changes
+  if (raw && raw !== lastLuckyQuery) {
+    lastLuckyQuery = raw
+    resolveLuckyInBg(raw)
+  }
+
   const tokens = safeTokenize(raw)
   const impact = tokensToImpact(tokens)
 
@@ -343,6 +347,21 @@ const render = () => {
 
   const existingToast = document.getElementById("eco-saved")
   const toastHTML = existingToast ? existingToast.outerHTML : ""
+
+  const href  = resolvedLuckyUrl || (raw ? luckyUrl(raw) : "")
+  const title = resolvedLuckyTitle || (href ? new URL(href).hostname.replace(/^www\./, "") : "")
+
+const googleSection = raw && href ? `
+  <div class="row google small">
+    Top web result:
+    <div>
+      <a class="link" href="${href}" target="_blank" rel="noopener noreferrer">
+        ${title}
+      </a>
+      <div class="tiny url">${href}</div>
+    </div>
+  </div>` : ""
+
 
   panel.innerHTML = `
     <h3>EcoPrompt <span aria-hidden="true">&#x1F331;</span></h3>
@@ -358,6 +377,7 @@ const render = () => {
       <button id="eco-trim" class="btn" title="Remove filler words from your prompt">Trim filler</button>
     </div>
     ${toastHTML}
+    ${googleSection}
   `
 
   const btn = panel.querySelector<HTMLButtonElement>("#eco-trim")
@@ -411,8 +431,6 @@ const onSend = () => {
   )
 
   recordCumulative(tokensSaved, gSaved)
-
-  // ✅ increment the user's running total in `profiles`
   addSavedTokensToProfile(tokensSaved)
 
   pendingTrimBeforeTokens = null
