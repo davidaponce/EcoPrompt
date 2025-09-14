@@ -17,22 +17,185 @@ somewhat
 definitely
 obviously
 clearly
-basically
 essentially
+generally
+typically
+virtually
+arguably
+supposedly
+reportedly
+presumably
+technically
+personally
+frankly
+simply
+totally
+absolutely
+completely
+almost
+nearly
+mostly
+largely
+slightly
+fairly
+relatively
+truly
+certainly
 
 # Vagueness
 kind of
 sort of
 a bit
 a little
+a little bit
+in a way
+in some ways
+more or less
+kind of like
+sort of like
+something like
+stuff
+things
 
 # Hedging clauses
 i think
 i believe
 i guess
 i feel
-i mean
-you know
+i suppose
+i’d say
+it seems
+it appears
+it looks like
+as far as i know
+as far as i can tell
+to me
+in my opinion
+in my humble opinion
 
 # Conversational tic
 like
+well
+so
+um
+uh
+er
+hmm
+okay
+ok
+alright
+anyway
+yeah
+yep
+nope
+kinda
+sorta
+right?
+you see
+you know what i mean
+you know
+
+# Polite lead-ins / softeners
+could you
+could you please
+would you
+would you please
+would you mind
+is it possible to
+would it be possible to
+when you get a chance
+at your earliest convenience
+if you can
+if you could
+if you would
+if possible
+i was wondering
+i was wondering if you could
+may i ask
+please could you
+i’d like to
+i would like to
+
+# Polite closers / gratitude fluff
+thanks
+thank you
+thanks in advance
+much appreciated
+really appreciate it
+appreciate it
+cheers
+thx
+ty
+
+# Discourse markers / chit-chat prefaces
+to be honest
+tbh
+honestly speaking
+basically speaking
+in fact
+as a matter of fact
+at the end of the day
+for what it’s worth
+to be fair
+to be clear
+by the way
+btw
+that being said
+having said that
+long story short
+just so you know
+for your information
+fyi
+
+# Redundant verbosity
+due to the fact that
+in order to
+for the purpose of
+with regard to
+with respect to
+in terms of
+the reason why is because
+it should be noted that
+i would like to
+i want to ask you to
+i need to ask you to
+
+# Apologies / disclaimers
+sorry
+i’m sorry
+sorry if
+excuse me
+pardon me
+i’m not sure
+i’m not certain
+i might be wrong
+i’m no expert
+this might be a dumb question
+this might be a silly question
+
+# Time / hesitation fillers
+just a second
+one sec
+give me a sec
+wait
+hold on
+
+# Qualifiers / minimizers
+only
+just
+barely
+hardly
+somewhat
+relatively
+slightly
+
+# Intensifiers (chatty)
+super
+ultra
+mega
+insanely
+incredibly
+extremely
+hugely
+massively
+so
