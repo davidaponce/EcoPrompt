@@ -2,13 +2,14 @@
 import type { PlasmoCSConfig } from "plasmo"
 import { encode } from "gpt-tokenizer"
 import {
-  // live footprint
   tokensToImpact,
-  fmtInt, fmtKWh, fmtG, fmtEq, fmtPhoneCharge, fmtBulbTime,
-  setProfile,
-  // savings
-  compareImpact, fmtLiters, fmtTreeDays
+  fmtInt, fmtKWh, fmtG, fmtEq,
+  fmtPhoneCharge, fmtBulbTime,
+  setProfile
 } from "../lib/co2"
+
+// Optional filler list (one per line; lines starting with # are comments)
+import FILLERS_RAW from "bundle-text:../data/fillers.txt"
 
 // Run on ChatGPT (old + new domains)
 export const config: PlasmoCSConfig = {
@@ -17,10 +18,10 @@ export const config: PlasmoCSConfig = {
   run_at: "document_start"
 }
 
-// Pick the impact profile (extreme/typical/conservative)
-setProfile("extreme")
+// Choose impact profile
+setProfile("extreme") // or "typical" / "conservative"
 
-// ---------- styles & DOM ----------
+// ---------- styles & panel ----------
 const ensureStyle = () => {
   if (document.getElementById("eco-style-chatgpt")) return
   const style = document.createElement("style")
@@ -28,25 +29,16 @@ const ensureStyle = () => {
   style.textContent = `
     #eco-topright{
       position:fixed;top:12px;right:12px;z-index:2147483647;
-      width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;
+      width:320px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;
       box-shadow:0 8px 28px rgba(0,0,0,.15);padding:12px 14px;
       color:#111827;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
     }
     @media (prefers-color-scheme: dark){
       #eco-topright{background:#16181c;color:#e5e7eb;border-color:#2a2f39}
-      #eco-saved{background:#0d3b1e;color:#d2f5df;border-color:#14532d}
     }
     #eco-topright h3{margin:0 0 6px;font-size:14px;font-weight:600}
     #eco-topright .row{margin:4px 0}
     #eco-topright .small{font-size:12px;opacity:.85}
-
-    /* Saved (green) toast */
-    #eco-saved{
-      margin-top:8px;border:1px solid #16a34a;background:#ecfdf5;color:#065f46;
-      border-radius:10px;padding:8px 10px;font-size:12px
-    }
-
-    /* Simple action button */
     #eco-topright .actions{margin-top:8px}
     #eco-topright .btn{
       appearance:none;border:1px solid #e5e7eb;background:#f7f8fa;border-radius:8px;
@@ -56,6 +48,15 @@ const ensureStyle = () => {
     @media (prefers-color-scheme: dark){
       #eco-topright .btn{background:#1c212b;border-color:#2a2f39;color:#e5e7eb}
       #eco-topright .btn:hover{background:#232938}
+    }
+
+    /* Saved (green) toast */
+    #eco-saved{
+      margin-top:8px;border:1px solid #16a34a;background:#ecfdf5;color:#065f46;
+      border-radius:10px;padding:8px 10px;font-size:12px
+    }
+    @media (prefers-color-scheme: dark){
+      #eco-saved{background:#0d3b1e;color:#d2f5df;border-color:#14532d}
     }
   `
   document.head.appendChild(style)
@@ -71,74 +72,24 @@ const ensurePanel = (): HTMLDivElement => {
   return el
 }
 
-// ---------- grab/set editor text ----------
-let currentPrompt = ""
+// ---------- filler helpers ----------
+const parseFillers = (raw: string) =>
+  raw.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith("#"))
 
-// Deep-active element (through shadow roots)
-const readDeepActive = (): HTMLElement | null => {
-  const getDeep = (root: Document | ShadowRoot): Element | null => {
-    // @ts-ignore
-    const ae = root.activeElement as Element | null
-    const sr = (ae as any)?.shadowRoot as ShadowRoot | undefined
-    return sr ? getDeep(sr) : ae
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const FILLERS = parseFillers(FILLERS_RAW || "")
+
+function stripFillers(s: string) {
+  if (!s) return s
+  let t = ` ${s} `
+  // replace longer phrases first
+  for (const p of [...FILLERS].sort((a, b) => b.length - a.length)) {
+    t = t.replace(new RegExp(`\\b${esc(p)}\\b`, "gi"), " ")
   }
-  return (getDeep(document) as HTMLElement | null) || null
+  return t.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim()
 }
 
-const getTextFromNode = (el: Element | null): string => {
-  if (!el) return ""
-  if (el instanceof HTMLTextAreaElement) return el.value || ""
-  if (el instanceof HTMLElement) {
-    const isCE = el.getAttribute("contenteditable") === "true" || el.getAttribute("role") === "textbox"
-    if (isCE) return (el.innerText ?? el.textContent ?? "") as string
-  }
-  return ""
-}
-
-const setTextIntoNode = (el: Element | null, text: string) => {
-  if (!el) return
-  if (el instanceof HTMLTextAreaElement) {
-    el.value = text
-    el.dispatchEvent(new InputEvent("input", { bubbles: true }))
-    return
-  }
-  if (el instanceof HTMLElement) {
-    const isCE = el.getAttribute("contenteditable") === "true" || el.getAttribute("role") === "textbox"
-    if (isCE) {
-      el.innerText = text
-      el.dispatchEvent(new InputEvent("input", { bubbles: true }))
-    }
-  }
-}
-
-// ---------- utils ----------
-const debounce = <F extends (...a: any[]) => void>(fn: F, ms = 120) => {
-  let t: number | undefined
-  return (...args: Parameters<F>) => {
-    if (t) window.clearTimeout(t)
-    t = window.setTimeout(() => fn(...args), ms)
-  }
-}
-const safeTokenize = (text: string): number => {
-  try { return text ? encode(text).length : 0 }
-  catch { return Math.ceil((text || "").length / 4) }
-}
-
-// ---------- BASIC TRIMMER ----------
-const trimPromptBasic = (s: string): string => {
-  return s
-    .replace(/\s+/g, " ")
-    .replace(/\b(please|kindly|if you can|could you|I would like to|just)\b/gi, "")
-    .replace(/\b(in detail|very detailed|extremely|really|basically|actually)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
-/* ------------------------------------------------------------------ */
-/*                    TRIM BUTTON: editor-safe plumbing                */
-/*  Works even when the button steals focus (scans/caches the editor)  */
-/* ------------------------------------------------------------------ */
-
+// ---------- editor detection (cache + scan) ----------
 type EditorEl = HTMLTextAreaElement | HTMLInputElement | HTMLElement
 let lastEditor: EditorEl | null = null
 
@@ -153,13 +104,15 @@ const isEditorEl = (el: Element | null): el is EditorEl => {
   }
   return false
 }
+
 const isVisible = (el: Element) => {
   const h = el as HTMLElement
   const r = h.getBoundingClientRect()
   const st = getComputedStyle(h)
   return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"
 }
-// bottom-most visible editor wins
+
+// scan DOM for the best candidate (bottom-most, visible)
 function findBestEditor(): EditorEl | null {
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>(
@@ -176,20 +129,25 @@ function findBestEditor(): EditorEl | null {
   }
   return best as EditorEl | null
 }
+
+// Use cached editor if still in the document; else scan
 function getEditor(): EditorEl | null {
   if (lastEditor && document.contains(lastEditor)) return lastEditor
   lastEditor = findBestEditor()
   return lastEditor
 }
+
 function getEditorText(): string {
   const el = getEditor()
   if (!el) return ""
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value
   return (el.innerText ?? el.textContent ?? "") as string
 }
+
 function setEditorText(text: string) {
   const el = getEditor()
   if (!el) return
+
   // Case 1: <textarea>/<input>
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     const proto = Object.getPrototypeOf(el)
@@ -198,14 +156,20 @@ function setEditorText(text: string) {
     el.dispatchEvent(new Event("input", { bubbles: true }))
     return
   }
-  // Case 2: contenteditable (React/Lexical)
+
+  // Case 2: contenteditable (Lexical/React)
   el.focus()
+  // Select-all inside the editor so we can replace safely even if focus moved to the button
   const sel = document.getSelection()
   sel?.removeAllRanges()
   const range = document.createRange()
   range.selectNodeContents(el)
   sel?.addRange(range)
+
+  // Preferred path: insertText (fires beforeinput+input that editors listen to)
   document.execCommand("insertText", false, text)
+
+  // Extra nudge for some builds
   el.dispatchEvent(new InputEvent("input", {
     bubbles: true,
     inputType: "insertReplacementText",
@@ -213,24 +177,102 @@ function setEditorText(text: string) {
   }))
 }
 
-// ---------- live panel ----------
+// ---------- capture user typing (keeps cache fresh) ----------
+let currentPrompt = ""
+
+const targetFromEventPath = (ev: Event): HTMLElement | null => {
+  const path = (ev.composedPath && ev.composedPath()) || []
+  for (const t of path) {
+    if (t && t instanceof HTMLElement) {
+      if (isEditorEl(t)) return t
+    }
+  }
+  return null
+}
+
+const extractTextFromNode = (el: Element | null): string => {
+  if (!isEditorEl(el)) return ""
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value || ""
+  return (el.innerText ?? el.textContent ?? "") as string
+}
+
+// ---------- utils ----------
+const debounce = <F extends (...a: any[]) => void>(fn: F, ms = 120) => {
+  let t: number | undefined
+  return (...args: Parameters<F>) => {
+    if (t) window.clearTimeout(t)
+    t = window.setTimeout(() => fn(...args), ms)
+  }
+}
+
+const safeTokenize = (text: string): number => {
+  try { return text ? encode(text).length : 0 }
+  catch { return Math.ceil((text || "").length / 4) }
+}
+
+// Guarded chrome.storage write (avoid dev “context invalidated” crashes)
+const canUseChrome = () =>
+  typeof chrome !== "undefined" &&
+  !!chrome.runtime &&
+  !!chrome.runtime.id &&
+  !!chrome.storage?.local
+
+const safeStore = (data: Record<string, unknown>) => {
+  try { if (canUseChrome()) chrome.storage.local.set(data) } catch { /* noop */ }
+}
+
+// ---------- green saved box ----------
+const showSavedToast = (html: string) => {
+  const panel = ensurePanel()
+  let toast = document.getElementById("eco-saved")
+  if (!toast) {
+    toast = document.createElement("div")
+    toast.id = "eco-saved"
+    panel.appendChild(toast)
+  }
+  toast.innerHTML = html
+  // auto-hide after 5s (tweak/remove if you want it to persist)
+  window.setTimeout(() => { toast?.remove() }, 5000)
+}
+
+// ---------- cumulative stats (logged only on send) ----------
+const recordCumulative = async (tokensSaved: number, gSaved: number) => {
+  try {
+    if (!canUseChrome()) return
+    const { ecoStats } = await chrome.storage.local.get("ecoStats")
+    const v = (ecoStats && typeof ecoStats === "object")
+      ? ecoStats
+      : { tokens_saved: 0, co2_saved_g: 0, queries_rewritten: 0 }
+    v.tokens_saved = (v.tokens_saved || 0) + Math.round(tokensSaved)
+    v.co2_saved_g = (v.co2_saved_g || 0) + gSaved
+    v.queries_rewritten = (v.queries_rewritten || 0) + 1
+    await chrome.storage.local.set({ ecoStats: v })
+  } catch { /* ignore */ }
+}
+
+// ---------- trim workflow ----------
+// We remember the token count *before* the last Trim click.
+// On send, we compare that snapshot to the current editor text.
+let pendingTrimBeforeTokens: number | null = null
+
+// ---------- render ----------
 const render = () => {
   ensureStyle()
-  const el = ensurePanel()
+  const panel = ensurePanel()
 
-  const active = readDeepActive()
-  const raw = (currentPrompt || getTextFromNode(active) || "").replace(/\s+/g, " ").trim()
-  const typedTokens = safeTokenize(raw)
-  const impact = tokensToImpact(typedTokens)
+  // Prefer event-fed prompt; fallback to editor text
+  const raw = (currentPrompt || getEditorText() || "").replace(/\s+/g, " ").trim()
+  const tokens = safeTokenize(raw)
+  const impact = tokensToImpact(tokens)
 
-  chrome.storage?.local?.set?.({ currentTokens: typedTokens, currentSource: "chatgpt" })
+  safeStore({ currentTokens: tokens, currentSource: "chatgpt" })
 
-  const savedDiv = document.getElementById("eco-saved")
-  const savedHTML = savedDiv ? savedDiv.outerHTML : ""
+  // keep any existing toast in place while re-rendering panel
+  const existingToast = document.getElementById("eco-saved")
+  const toastHTML = existingToast ? existingToast.outerHTML : ""
 
-  el.innerHTML = `
+  panel.innerHTML = `
     <h3>EcoPrompt <span aria-hidden="true">&#x1F331;</span></h3>
-    <div class="row">Input tokens: ${fmtInt(typedTokens)}</div>
     <div class="row">Tokens (incl. output est.): ${fmtInt(impact.tokens)}</div>
     <div class="row">Energy: ${fmtKWh(impact.kwh)}</div>
     <div class="row">Emissions: ${fmtG(impact.gCO2)}</div>
@@ -239,38 +281,33 @@ const render = () => {
       ≈ ${fmtBulbTime(impact.eq.bulbHours60W)} (60W) ·
       ≈ ${fmtEq(impact.eq.googleSearches)} searches
     </div>
-    ${savedHTML}
     <div class="actions">
       <button id="eco-trim" class="btn" title="Remove filler words from your prompt">Trim filler</button>
     </div>
+    ${toastHTML}
   `
 
-  // Trim button behavior (uses cached/scanned editor so focus on button is OK)
-  const btn = el.querySelector<HTMLButtonElement>("#eco-trim")
+  const btn = panel.querySelector<HTMLButtonElement>("#eco-trim")
   if (btn) {
     btn.onclick = () => {
-      const before = getEditorText()
-      const after  = trimPromptBasic(before)
-      if (after !== before) {
-        setEditorText(after)
-        currentPrompt = after
+      const beforeText = getEditorText()
+      const afterText  = stripFillers(beforeText)
+      if (afterText !== beforeText) {
+        // snapshot tokens *before* trimming, for later logging
+        pendingTrimBeforeTokens = safeTokenize(beforeText)
+        setEditorText(afterText)
+        currentPrompt = afterText
+      } else {
+        // nothing changed -> no pending savings to report
+        pendingTrimBeforeTokens = null
       }
     }
   }
 }
 
-// keep “stopped typing” snapshot for savings math
-let baselineText = ""
-let baselineTokens = 0
-const markStoppedTyping = debounce(() => {
-  const active = readDeepActive()
-  baselineText = getTextFromNode(active)
-  baselineTokens = safeTokenize((baselineText || "").replace(/\s+/g, " ").trim())
-}, 600)
-
 const debouncedRender = debounce(render, 150)
 
-// ---------- savings on send ----------
+// ---------- send handlers (log only when user sends) ----------
 const isSendButton = (n: Element | null): boolean => {
   if (!n) return false
   const el = n as HTMLElement
@@ -281,116 +318,60 @@ const isSendButton = (n: Element | null): boolean => {
   )
 }
 
-const showSavedToast = (html: string) => {
-  const panel = ensurePanel()
-  let toast = document.getElementById("eco-saved")
-  if (!toast) {
-    toast = document.createElement("div")
-    toast.id = "eco-saved"
-    panel.appendChild(toast)
-  }
-  toast.innerHTML = html
-  // auto-hide after 5s
-  window.setTimeout(() => { toast?.remove() }, 5000)
-}
+const onSend = () => {
+  // Only log if a Trim happened before this send
+  if (pendingTrimBeforeTokens == null) return
 
-const recordCumulative = async (tokensSaved: number, gSaved: number) => {
-  const { ecoStats } = await chrome.storage.local.get("ecoStats")
-  const v = (ecoStats && typeof ecoStats === "object") ? ecoStats : { tokens_saved: 0, co2_saved_g: 0, queries_rewritten: 0 }
-  v.tokens_saved = (v.tokens_saved || 0) + Math.round(tokensSaved)
-  v.co2_saved_g = (v.co2_saved_g || 0) + gSaved
-  v.queries_rewritten = (v.queries_rewritten || 0) + 1
-  await chrome.storage.local.set({ ecoStats: v })
-}
+  const currentText   = (getEditorText() || "").trim()
+  const currentTokens = safeTokenize(currentText)
 
-const postToBackend = async (_payload: any) => {
-  // Optional: requires host_permissions for your API in manifest.
-  // try {
-  //   await fetch("https://api.yourdomain.com/v1/saves", {
-  //     method: "POST",
-  //     headers: { "Content-Type": "application/json" },
-  //     body: JSON.stringify(payload)
-  //   })
-  // } catch {}
-}
+  // Compute savings using the full impact model so equivalences stay consistent
+  const b = tokensToImpact(pendingTrimBeforeTokens)
+  const a = tokensToImpact(currentTokens)
 
-const onSend = (_triggerEl: Element | null) => {
-  // 1) collect before text/tokens
-  const beforeText = (baselineText || currentPrompt || getEditorText() || "").trim()
-  const beforeTokens = safeTokenize(beforeText)
+  const tokensSaved       = Math.max(0, b.tokens - a.tokens)
+  const kwhSaved          = Math.max(0, b.kwh - a.kwh)
+  const gSaved            = Math.max(0, b.gCO2 - a.gCO2)
+  const searchesSaved     = Math.max(0, b.eq.googleSearches - a.eq.googleSearches)
+  const phoneChargesSaved = Math.max(0, b.eq.phoneCharges - a.eq.phoneCharges)
 
-  // 2) trim (same logic the button uses)
-  const afterText = trimPromptBasic(beforeText)
-  const afterTokens = safeTokenize(afterText)
-
-  // 3) if changed, inject trimmed text before ChatGPT consumes it
-  if (afterText !== beforeText) {
-    setEditorText(afterText)
-  }
-
-  // 4) compute savings (input + estimated output)
-  const delta = compareImpact(beforeTokens, afterTokens)
-
-  // 5) toast in panel
+  // Show green toast
   showSavedToast(
-    `Saved <b>${fmtInt(delta.tokensSaved)}</b> tokens, <b>${fmtKWh(delta.kwhSaved)}</b>, <b>${fmtG(delta.gSaved)}</b><br/>
-     ≈ ${fmtEq(delta.eq.googleSearches)} searches ·
-     ≈ ${fmtPhoneCharge(delta.eq.phoneCharges)} of a phone charge ·
-     ≈ ${fmtLiters(delta.eq.waterLiters)} water ·
-     ≈ ${fmtTreeDays(delta.eq.treeDays)}`
+    `Saved <b>${fmtInt(tokensSaved)}</b> tokens, <b>${fmtKWh(kwhSaved)}</b>, <b>${fmtG(gSaved)}</b><br/>
+     ≈ ${fmtEq(searchesSaved)} searches ·
+     ≈ ${fmtPhoneCharge(phoneChargesSaved)} of a phone charge`
   )
 
-  // 6) increment local totals and optionally send to backend
-  recordCumulative(delta.tokensSaved, delta.gSaved)
-  postToBackend({
-    ts: Date.now(),
-    source: "chatgpt",
-    beforeTokens, afterTokens,
-    saved: {
-      tokens: delta.tokensSaved,
-      kwh: delta.kwhSaved,
-      gCO2: delta.gSaved,
-      searches: delta.eq.googleSearches,
-      phoneCharges: delta.eq.phoneCharges,
-      waterLiters: delta.eq.waterLiters,
-      treeDays: delta.eq.treeDays
-    }
-  })
+  // Record cumulative once per send
+  recordCumulative(tokensSaved, gSaved)
 
+  // Clear snapshot to avoid double-logging on subsequent sends
+  pendingTrimBeforeTokens = null
+
+  // Nudge panel numbers
   debouncedRender()
 }
 
 // Click send (capture)
 document.addEventListener("click", (ev) => {
   const t = ev.target as Element | null
-  if (isSendButton(t)) onSend(t)
+  if (isSendButton(t)) onSend()
 }, true)
 
-// Enter to send (capture) — don’t block default, just observe
+// Enter to send (capture)
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter" && !ev.shiftKey && isEditorEl(document.activeElement as Element | null)) {
-    onSend(document.activeElement as Element | null)
-  }
+  if (ev.key === "Enter" && !ev.shiftKey && isEditorEl(document.activeElement)) onSend()
 }, true)
 
 // ---------- boot & listeners ----------
 const main = () => {
   render()
 
+  // Keep cache fresh and panel updated
   const updateFromEvent = (ev: Event) => {
-    const path = (ev.composedPath && ev.composedPath()) || []
-    for (const p of path) {
-      if (p && p instanceof HTMLElement) {
-        const role = p.getAttribute("role")
-        const ce = p.getAttribute("contenteditable")
-        if (p.tagName === "TEXTAREA" || ce === "true" || role === "textbox") {
-          currentPrompt = getTextFromNode(p)
-          lastEditor = p as EditorEl // keep cache fresh for the Trim button
-          markStoppedTyping()
-          break
-        }
-      }
-    }
+    const el = targetFromEventPath(ev) || (document.activeElement as Element | null)
+    if (isEditorEl(el)) lastEditor = el as EditorEl
+    currentPrompt = extractTextFromNode(el)
     debouncedRender()
   }
   document.addEventListener("input", updateFromEvent, true)
@@ -398,13 +379,13 @@ const main = () => {
   document.addEventListener("paste", updateFromEvent, true)
   document.addEventListener("compositionend", updateFromEvent, true)
 
+  // React to SPA mutations or view changes
   const mo = new MutationObserver(debouncedRender)
   mo.observe(document.documentElement, { childList: true, subtree: true })
-
-  // keep underline/panel aligned on viewport changes (safe)
   window.addEventListener("resize", debouncedRender)
   window.addEventListener("scroll", debouncedRender, true)
 
+  // Safety poll
   setInterval(debouncedRender, 1200)
 }
 
