@@ -73,16 +73,31 @@ export const tokensToImpact = (tokens: number): Impact => {
 }
 
 // ---------------- Optional: formatting helpers ----------------
+// Smart energy units so tiny values aren't lost
 export const fmtKWh = (kwh: number): string => {
   if (kwh >= 1) return `${kwh.toFixed(2)} kWh`
   if (kwh >= 0.001) return `${(kwh * 1000).toFixed(2)} Wh`   // < 1 kWh → Wh
-  return `${(kwh * 1_000_000).toFixed(0)} mWh`               // tiny → mWh
+  return `${(kwh * 1_000_000).toFixed(0)} mWh`               // very small → mWh
 }
 
+// Smart grams so tiny values aren't zeroed out
 export const fmtG = (g: number): string => {
   if (g >= 1) return `${g.toFixed(2)} g CO₂`
   if (g >= 0.001) return `${(g * 1000).toFixed(2)} mg CO₂`   // < 1 g → mg
-  return `${(g * 1_000_000).toFixed(0)} µg CO₂`              // ultra-small → µg
+  return `${(g * 1_000_000).toFixed(0)} µg CO₂`
 }
 
+// New: fraction-friendly numbers for real-world equivalents
+export const fmtEq = (n: number): string => {
+  if (n === 0) return "0"
+  if (n < 0.01) return "<0.01"
+  if (n < 1) return n.toFixed(2)
+  if (n < 10) return n.toFixed(1)
+  return Math.round(n).toLocaleString()
+}
+
+// Keep this for places where you *do* want integer rounding
 export const fmtInt = (n: number): string => Math.round(n).toLocaleString()
+
+// (Optional) Always-kWh display if you want it:
+export const fmtKWhStrict = (kwh: number, d = 6): string => `${kwh.toFixed(d)} kWh`

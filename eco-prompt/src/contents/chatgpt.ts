@@ -1,7 +1,7 @@
 // src/contents/chatgpt.ts
 import type { PlasmoCSConfig } from "plasmo"
 import { encode } from "gpt-tokenizer"
-import { tokensToImpact, fmtInt, fmtKWh, fmtG } from "../lib/co2"
+import { tokensToImpact, fmtInt, fmtKWh, fmtG, fmtEq } from "../lib/co2"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://chat.openai.com/*", "https://chatgpt.com/*"],
@@ -184,20 +184,18 @@ const render = async () => {
     : (q ? `<div class="eco-status">No results found.</div>` : ``)
 
   // ---- Compose card: CO₂ first, then links ----
-  el.innerHTML = `
-    <div class="eco-footprint">
-      <h3>EcoPrompt🌱</h3>
-      <div class="eco-row">Tokens: ${fmtInt(tokens)}</div>
-      <div class="eco-row">Energy: ${fmtKWh(impact.kwh)}</div>
-      <div class="eco-row">Emissions: ${fmtG(impact.gCO2)}</div>
-      <div class="eco-row eco-small">
-        ≈ ${fmtInt(impact.eq.phoneCharges)} phone charges ·
-        ≈ ${fmtInt(impact.eq.bulbHours60W)} h (60W) ·
-        ≈ ${fmtInt(impact.eq.googleSearches)} searches
-      </div>
-    </div>
-    ${linksHTML}
-  `
+ el.innerHTML = `
+  <h3>EcoPrompt <span class="eco-emoji" aria-hidden="true">&#x1F331;</span></h3>
+  <div class="row">Tokens: ${fmtInt(tokens)}</div>
+  <div class="row">Energy: ${fmtKWh(impact.kwh)}</div>
+  <div class="row">Emissions: ${fmtG(impact.gCO2)}</div>
+  <div class="row small muted">
+    ≈ ${fmtEq(impact.eq.phoneCharges)} phone charges ·
+    ≈ ${fmtEq(impact.eq.bulbHours60W)} h (60W) ·
+    ≈ ${fmtEq(impact.eq.googleSearches)} searches
+  </div>
+`
+
 
   // click tracking stays the same
   el.querySelectorAll<HTMLAnchorElement>("a[data-eco-index]").forEach(a => {

@@ -1,6 +1,6 @@
 // src/popup.tsx
 import { useState } from "react"
-import { tokensToImpact, fmtInt, fmtKWh, fmtG } from "./lib/co2"
+import { tokensToImpact, fmtInt, fmtKWh, fmtG, fmtEq } from "./lib/co2"
 
 export default function Popup() {
   const [tokens, setTokens] = useState<number>(500000) // try 500k by default
