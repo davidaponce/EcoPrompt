@@ -83,6 +83,7 @@ const ensureStyle = () => {
       color:#111827;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
     }
     #eco-topright .url{display:block; max-width:100%; word-break:break-all; overflow-wrap:anywhere}
+    #eco-topright .tiny{font-size:11px;opacity:.8;word-break:break-all;overflow-wrap:anywhere}
     @media (prefers-color-scheme: dark){
       #eco-topright{background:#16181c;color:#e5e7eb;border-color:#2a2f39}
     }
@@ -136,7 +137,7 @@ const luckyUrl = (q: string) =>
 
 let lastLuckyQuery = ""
 let resolvedLuckyUrl: string | null = null
-let resolvedLuckyTitle: string | null = null;
+let resolvedLuckyTitle: string | null = null
 
 const resolveLuckyInBg = (q: string) => {
   const url = luckyUrl(q)
@@ -156,7 +157,6 @@ const resolveLuckyInBg = (q: string) => {
     )
   } catch { /* ignore */ }
 }
-
 
 // ---------- filler helpers ----------
 const parseFillers = (raw: string) =>
@@ -230,7 +230,6 @@ function getEditorText(): string {
 function setEditorText(text: string) {
   const el = getEditor()
   if (!el) return
-
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
     const proto = Object.getPrototypeOf(el)
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
@@ -238,7 +237,6 @@ function setEditorText(text: string) {
     el.dispatchEvent(new Event("input", { bubbles: true }))
     return
   }
-
   el.focus()
   const sel = document.getSelection()
   sel?.removeAllRanges()
@@ -309,6 +307,37 @@ const showSavedToast = (html: string) => {
   window.setTimeout(() => { toast?.remove() }, 5000)
 }
 
+// ---------- session accumulator (so it never "resets") ----------
+const session = { tokens: 0, kwh: 0, g: 0, searches: 0, phone: 0 }
+
+const addToSessionAndToast = (
+  tokensSaved: number,
+  kwhSaved: number,
+  gSaved: number,
+  searchesSaved: number,
+  phoneChargesSaved: number,
+  label?: string
+) => {
+  session.tokens   += Math.round(tokensSaved)
+  session.kwh      += kwhSaved
+  session.g        += gSaved
+  session.searches += searchesSaved
+  session.phone    += phoneChargesSaved
+
+  const action = `
+    ${label ? `<div class="small"><b>${label}</b></div>` : ``}
+    Saved <b>${fmtInt(tokensSaved)}</b> tokens, <b>${fmtKWh(kwhSaved)}</b>, <b>${fmtG(gSaved)}</b><br/>
+    ≈ ${fmtEq(searchesSaved)} searches ·
+    ≈ ${fmtPhoneCharge(phoneChargesSaved)} of a phone charge
+  `
+  const total = `
+    <div class="small" style="margin-top:6px;opacity:.9">
+      Total this session: <b>${fmtInt(session.tokens)}</b> tokens · ${fmtKWh(session.kwh)} · ${fmtG(session.g)}
+    </div>
+  `
+  showSavedToast(action + total)
+}
+
 // ---------- cumulative stats ----------
 const recordCumulative = async (tokensSaved: number, gSaved: number) => {
   try {
@@ -334,7 +363,6 @@ const render = () => {
 
   const raw = (currentPrompt || getEditorText() || "").replace(/\s+/g, " ").trim()
 
-  // kick off resolution whenever the query changes
   if (raw && raw !== lastLuckyQuery) {
     lastLuckyQuery = raw
     resolveLuckyInBg(raw)
@@ -351,17 +379,16 @@ const render = () => {
   const href  = resolvedLuckyUrl || (raw ? luckyUrl(raw) : "")
   const title = resolvedLuckyTitle || (href ? new URL(href).hostname.replace(/^www\./, "") : "")
 
-const googleSection = raw && href ? `
-  <div class="row google small">
-    Top web result:
-    <div>
-      <a class="link" href="${href}" target="_blank" rel="noopener noreferrer">
-        ${title}
-      </a>
-      <div class="tiny url">${href}</div>
-    </div>
-  </div>` : ""
-
+  const googleSection = raw && href ? `
+    <div class="row google small">
+      Top web result:
+      <div>
+        <a id="eco-google-link" class="link" href="${href}" target="_blank" rel="noopener noreferrer">
+          ${title}
+        </a>
+        <div class="tiny url">${href}</div>
+      </div>
+    </div>` : ""
 
   panel.innerHTML = `
     <h3>EcoPrompt <span aria-hidden="true">&#x1F331;</span></h3>
@@ -380,13 +407,14 @@ const googleSection = raw && href ? `
     ${googleSection}
   `
 
+  // Trim button
   const btn = panel.querySelector<HTMLButtonElement>("#eco-trim")
   if (btn) {
     btn.onclick = () => {
       const beforeText = getEditorText()
       const afterText  = stripFillers(beforeText)
       if (afterText !== beforeText) {
-        pendingTrimBeforeTokens = safeTokenize(beforeText)
+        pendingTrimBeforeTokens = safeTokenize(beforeText) // snapshot before
         setEditorText(afterText)
         currentPrompt = afterText
       } else {
@@ -394,11 +422,34 @@ const googleSection = raw && href ? `
       }
     }
   }
+
+  // When user chooses the Google link, credit the *entire prompt* and accumulate
+  const glink = panel.querySelector<HTMLAnchorElement>("#eco-google-link")
+  if (glink) {
+    glink.addEventListener("click", () => {
+      const text = (getEditorText() || "").trim()
+      const tks  = safeTokenize(text)
+      const imp  = tokensToImpact(tks)
+
+      const fullTokensSaved = Math.max(0, imp.tokens)
+      if (fullTokensSaved > 0) {
+        addToSessionAndToast(
+          fullTokensSaved, imp.kwh, imp.gCO2, imp.eq.googleSearches, imp.eq.phoneCharges,
+          "Opened top web result"
+        )
+        recordCumulative(fullTokensSaved, imp.gCO2)
+        addSavedTokensToProfile(fullTokensSaved)
+      }
+
+      // We *do* want to allow later Trim savings to stack, but not double-count this one.
+      pendingTrimBeforeTokens = null
+    }, { once: true, capture: true })
+  }
 }
 
 const debouncedRender = debounce(render, 150)
 
-// ---------- send handlers ----------
+// ---------- send handlers (Trim → Enter flow) ----------
 const isSendButton = (n: Element | null): boolean => {
   if (!n) return false
   const el = n as HTMLElement
@@ -424,11 +475,7 @@ const onSend = () => {
   const searchesSaved     = Math.max(0, b.eq.googleSearches - a.eq.googleSearches)
   const phoneChargesSaved = Math.max(0, b.eq.phoneCharges - a.eq.phoneCharges)
 
-  showSavedToast(
-    `Saved <b>${fmtInt(tokensSaved)}</b> tokens, <b>${fmtKWh(kwhSaved)}</b>, <b>${fmtG(gSaved)}</b><br/>
-     ≈ ${fmtEq(searchesSaved)} searches ·
-     ≈ ${fmtPhoneCharge(phoneChargesSaved)} of a phone charge`
-  )
+  addToSessionAndToast(tokensSaved, kwhSaved, gSaved, searchesSaved, phoneChargesSaved, "Trimmed prompt")
 
   recordCumulative(tokensSaved, gSaved)
   addSavedTokensToProfile(tokensSaved)
