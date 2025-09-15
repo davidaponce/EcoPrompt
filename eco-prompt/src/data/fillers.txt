@@ -41,6 +41,19 @@ fairly
 relatively
 truly
 certainly
+literally speaking
+honestly speaking
+seriously though
+actually speaking
+basically speaking
+truthfully
+genuinely
+admittedly
+evidently
+surely
+obviously enough
+totally speaking
+clearly enough
 
 # Vagueness
 kind of
@@ -56,6 +69,16 @@ sort of like
 something like
 stuff
 things
+this thing
+that thing
+stuff like that
+or something
+or something like that
+whatever
+and whatnot
+etc.
+blah blah
+yada yada
 ,
 !
 ;
@@ -75,6 +98,16 @@ as far as i can tell
 to me
 in my opinion
 in my humble opinion
+i reckon
+i suspect
+i assume
+i’d imagine
+i’d guess
+looks like
+sounds like
+feels like
+sort of feels like
+seems like
 
 # Conversational tic
 like
@@ -97,6 +130,18 @@ right?
 you see
 you know what i mean
 you know
+literally like
+so yeah
+yeah so
+you know right
+you know what
+right okay
+right so
+mhm
+mmm
+uh huh
+you get me
+capisce
 
 # Polite lead-ins / softeners
 could you
@@ -118,6 +163,14 @@ may i ask
 please could you
 i’d like to
 i would like to
+do you think you could
+do you think you would
+can you please
+can you kindly
+would it be okay to
+would it be alright to
+at some point
+sometime soon
 
 # Polite closers / gratitude fluff
 thanks
@@ -129,6 +182,11 @@ appreciate it
 cheers
 thx
 ty
+thank you kindly
+kind regards
+warm regards
+much obliged
+thanks kindly
 
 # Discourse markers / chit-chat prefaces
 to be honest
@@ -149,6 +207,18 @@ long story short
 just so you know
 for your information
 fyi
+look
+listen
+hear me out
+fun fact
+believe it or not
+needless to say
+truth be told
+funny enough
+crazy enough
+coincidentally
+as mentioned
+as we know
 
 # Redundant verbosity
 due to the fact that
@@ -162,6 +232,14 @@ it should be noted that
 i would like to
 i want to ask you to
 i need to ask you to
+the fact that
+for the sake of
+the point is that
+in light of the fact that
+owing to the fact that
+due to the reason that
+for no reason in particular
+needless to say
 
 # Apologies / disclaimers
 sorry
@@ -175,6 +253,13 @@ i might be wrong
 i’m no expert
 this might be a dumb question
 this might be a silly question
+forgive me
+my bad
+my apologies
+apologies if
+apologies for
+excuse the question
+hope this isn’t dumb
 
 # Time / hesitation fillers
 just a second
@@ -182,6 +267,11 @@ one sec
 give me a sec
 wait
 hold on
+just wait
+hang on
+wait up
+gimme a moment
+for a second
 
 # Qualifiers / minimizers
 only
@@ -191,6 +281,12 @@ hardly
 somewhat
 relatively
 slightly
+merely
+scarcely
+roughly
+kind of barely
+only just
+sort of almost
 
 # Intensifiers (chatty)
 super
@@ -202,3 +298,13 @@ extremely
 hugely
 massively
 so
+crazy
+crazy-
+totally insane
+wildly
+absurdly
+ridiculously
+beyond belief
+over the top
+hella
+wicked
